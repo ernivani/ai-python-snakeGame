@@ -115,7 +115,7 @@ class SnakeGame():
         clock = pygame.time.Clock()
 
         frame = 0
-        frameRate = 10
+        frameRate = 120
         action = 0
         while (frame < self.epoch):
             clock.tick(frameRate)
