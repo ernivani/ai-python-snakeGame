@@ -4,3 +4,5 @@ neron.py
 handwriting-NN.py
 test..py
 __pycache__
+
+model_checkpoint_game_*

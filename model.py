@@ -9,6 +9,7 @@ class Linear_QNet(nn.Module):
         super().__init__()
         self.linear1 = nn.Linear(input_size, hidden_size)
         self.linear2 = nn.Linear(hidden_size, output_size)
+        self.load()
 
     def forward(self, x):
         x = F.relu(self.linear1(x))
@@ -23,6 +24,14 @@ class Linear_QNet(nn.Module):
         file_name = os.path.join(model_folder_path, file_name)
         torch.save(self.state_dict(), file_name)
 
+    def load(self, file_name='model.pth'):
+        model_folder_path = './model'
+        file_name = os.path.join(model_folder_path, file_name)
+        if os.path.exists(file_name):
+            self.load_state_dict(torch.load(file_name))
+            print(f"Model loaded from {file_name}.")
+        else:
+            print("No model found, starting fresh.")
 
 class QTrainer:
     def __init__(self, model, lr, gamma):

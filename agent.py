@@ -5,6 +5,7 @@ from collections import deque
 from snake import SnakeGameAI, Direction, Point
 from model import Linear_QNet, QTrainer
 from helper import plot
+import os
 
 MAX_MEMORY = 100_000
 BATCH_SIZE = 1000
@@ -107,6 +108,11 @@ def train():
     record = 0
     agent = Agent()
     game = SnakeGameAI()
+
+    # Charger le modèle s'il existe
+    if os.path.exists('./model/model.pth'):
+        print("Loading existing model...")
+        agent.model.load()
     while True:
         # get old state
         state_old = agent.get_state(game)
@@ -129,7 +135,9 @@ def train():
             game.reset()
             agent.n_games += 1
             agent.train_long_memory()
-
+            if agent.n_games % 100 == 0:
+                print("Saving model at game:", agent.n_games)
+                agent.model.save(f"model_checkpoint_game_{agent.n_games}.pth")
             if score > record:
                 record = score
                 agent.model.save()
