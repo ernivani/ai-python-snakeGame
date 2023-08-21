@@ -5,4 +5,4 @@ handwriting-NN.py
 test..py
 __pycache__
 
-model_checkpoint_game_*
+model*
