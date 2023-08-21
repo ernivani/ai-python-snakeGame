@@ -1,238 +1,154 @@
-import pygame, random, sys
-from pygame.locals import *
-from nn import neural_net
+import pygame
+import random
+from enum import Enum
+from collections import namedtuple
 import numpy as np
-import math as m
 
-class SnakeGame():
+pygame.init()
+font = pygame.font.Font('arial.ttf', 25)
+#font = pygame.font.SysFont('arial', 25)
 
-    def __init__(self, epoch=10, batch_size=10, epsilon=1, gamma=.8):
-        self.epoch = epoch
-        self.batch_size = batch_size
-        self.epsilon = epsilon
-        self.gamma = gamma
-        self.model = neural_net([15, 16], "saved_weights.h5")
-        self.load_model()  # Try to load weights if they exist
-        self.experience = []
+class Direction(Enum):
+    RIGHT = 1
+    LEFT = 2
+    UP = 3
+    DOWN = 4
 
-    # Check to see if there is a collision with a wall/apple/neither between two objects
-    def collide(self, Object1x, Object2x, Object1y, Object2y, Object1Width, Object2Width, Object1Height, Object2Height):
-        if Object1x+Object1Width>Object2x and Object1x<Object2x+Object2Width and Object1y+Object1Height>Object2y and Object1y<Object2y+Object2Height:return True
-        else:return False
+Point = namedtuple('Point', 'x, y')
 
-    def die(self, screen, score):
-        f=pygame.font.SysFont('Arial', 30);
-        t=f.render('Your score was: '+str(score), True, (0, 0, 0));
-        screen.blit(t, (10, 270));
-        pygame.display.update();
-        pygame.time.wait(500);
-        sys.exit(0)
+# rgb colors
+WHITE = (255, 255, 255)
+RED = (200,0,0)
+BLUE1 = (0, 0, 255)
+BLUE2 = (0, 100, 255)
+BLACK = (0,0,0)
 
-    def getNewState(self, oldState, action, dirs=0):
-        newState = oldState[:]
-        if(action == 2 and dirs != 0):
-            dirs = 2
-        elif(action == 0 and dirs !=2):
-            dirs = 0
-        elif(action == 3 and dirs !=1):
-            dirs = 3
-        elif(action == 1 and dirs !=3):
-            dirs = 1
+BLOCK_SIZE = 20
+SPEED = 40
 
-        if(dirs == 0):
-            newState[1] += 20
-        elif(dirs == 1):
-            newState[0] += 20
-        elif(dirs == 2):
-            newState[1] -= 20
-        elif(dirs == 3):
-            newState[0] -= 20
-        return newState
+class SnakeGameAI:
+
+    def __init__(self, w=640, h=480):
+        self.w = w
+        self.h = h
+        # init display
+        self.display = pygame.display.set_mode((self.w, self.h))
+        pygame.display.set_caption('Snake')
+        self.clock = pygame.time.Clock()
+        self.reset()
 
 
-    def getState(self):
-        # print(self.xs[0], self.ys[0], self.applepos[0], self.applepos[1])
-        return([self.xs[0], self.ys[0], self.applepos[0], self.applepos[1]])
+    def reset(self):
+        # init game state
+        self.direction = Direction.RIGHT
 
-    def distance(self, state):
-        SnakeX = state[0]; SnakeY = state[1];
-        AppleX = state[2]; AppleY = state[3];
-        d = m.sqrt(m.pow((AppleX - SnakeX),2) + m.pow((AppleY - SnakeY),2))
-        return d
+        self.head = Point(self.w/2, self.h/2)
+        self.snake = [self.head,
+                      Point(self.head.x-BLOCK_SIZE, self.head.y),
+                      Point(self.head.x-(2*BLOCK_SIZE), self.head.y)]
 
-    def reward(self, oldState, action, dirs):
-        newState = self.getNewState(oldState, action, dirs)
-        # -500 for restarting the game
-        if(self.collide_self_wall(newState)):
-            return -500
-        # reward +10 if snake is closer to apple, -10 if snake is farther
-        # and +100 if the snake gets the apple
-        oldDistance = self.distance(oldState)
-        newDistance = self.distance(newState)
-        if(oldDistance > newDistance):
-            if(newDistance == 0):
-                return 100
-            else:
-                return 10
-        elif(oldDistance < newDistance):
-            return -10
+        self.score = 0
+        self.food = None
+        self._place_food()
+        self.frame_iteration = 0
+
+
+    def _place_food(self):
+        x = random.randint(0, (self.w-BLOCK_SIZE )//BLOCK_SIZE )*BLOCK_SIZE
+        y = random.randint(0, (self.h-BLOCK_SIZE )//BLOCK_SIZE )*BLOCK_SIZE
+        self.food = Point(x, y)
+        if self.food in self.snake:
+            self._place_food()
+
+
+    def play_step(self, action):
+        self.frame_iteration += 1
+        # 1. collect user input
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                quit()
+        
+        # 2. move
+        self._move(action) # update the head
+        self.snake.insert(0, self.head)
+        
+        # 3. check if game over
+        reward = 0
+        game_over = False
+        if self.is_collision() or self.frame_iteration > 100*len(self.snake):
+            game_over = True
+            reward = -10
+            return reward, game_over, self.score
+
+        # 4. place new food or just move
+        if self.head == self.food:
+            self.score += 1
+            reward = 10
+            self._place_food()
         else:
-            return 0 # same spot: Unlikely but for debugging purposes
+            self.snake.pop()
+        
+        # 5. update ui and clock
+        self._update_ui()
+        self.clock.tick(SPEED)
+        # 6. return game over and score
+        return reward, game_over, self.score
 
-    def collide_self_wall(self, state):
-        SnakeX = state[0]
-        SnakeY = state[1]
-        #collided with itself
-        i = len(self.xs)-1
-        collided_w_itself = False
-        while i >= 2:
-            if self.collide(SnakeX, self.xs[i], SnakeY, self.ys[i], 20, 20, 20, 20):
-                return(True)
-            i-= 1
-        # collide with wall
-        if (SnakeX < 0 or SnakeX > 590 or SnakeY < 0 or SnakeY > 590):
-            return(True)
+
+    def is_collision(self, pt=None):
+        if pt is None:
+            pt = self.head
+        # hits boundary
+        if pt.x > self.w - BLOCK_SIZE or pt.x < 0 or pt.y > self.h - BLOCK_SIZE or pt.y < 0:
+            return True
+        # hits itself
+        if pt in self.snake[1:]:
+            return True
+
         return False
 
-    def collectExperience(self, experience):
-        self.experience.append(experience)
 
-    def playGame(self):
-        model = self.model
-        self.xs = [290, 290];
-        self.ys = [290, 290];
-        dirs = 0;
-        score = 0;
-        self.applepos = (random.randint(0, 590), random.randint(0, 590));
-        pygame.init();
-        screen=pygame.display.set_mode((600, 600));
-        pygame.display.set_caption('Snakes On The Plane');
-        Snake = pygame.Surface((20, 20));
-        Snake.fill((0, 0, 0));
-        appleimage = pygame.Surface((10, 10));
-        appleimage.fill((255, 0, 0));
-        f = pygame.font.SysFont('Arial', 20);
-        clock = pygame.time.Clock()
+    def _update_ui(self):
+        self.display.fill(BLACK)
 
-        frame = 0
-        frameRate = 120
-        action = 0
-        while (frame < self.epoch):
-            clock.tick(frameRate)
+        for pt in self.snake:
+            pygame.draw.rect(self.display, BLUE1, pygame.Rect(pt.x, pt.y, BLOCK_SIZE, BLOCK_SIZE))
+            pygame.draw.rect(self.display, BLUE2, pygame.Rect(pt.x+4, pt.y+4, 12, 12))
 
-            if(action == 2 and dirs != 0):
-                dirs = 2
-            elif(action == 0 and dirs !=2):
-                dirs = 0
-            elif(action == 3 and dirs !=1):
-                dirs = 3
-            elif(action == 1 and dirs !=3):
-                dirs = 1
+        pygame.draw.rect(self.display, RED, pygame.Rect(self.food.x, self.food.y, BLOCK_SIZE, BLOCK_SIZE))
 
-            for e in pygame.event.get():
-                if e.type == QUIT:
-                    sys.exit(0)
-
-            # Decrease epsilon over the first half of training
-            if (self.epsilon > 0.1):
-                self.epsilon -= (0.9 / self.epoch)
-
-            # decide which direction the snake will go
-            if ((random.random() < self.epsilon) and (frame < self.batch_size)):
-                action = random.choice([0,1,2,3]) #take a random direction
-            else:
-                # get action prediction from the model
-                state = np.array(self.getState())
-                prediction = model.predict(np.array([state])).flatten().tolist()
-                # print(prediction)
-                action = prediction.index(max(prediction))
-
-            # get the reward for the action taken with the state
-            state = self.getState()
-            reward = self.reward(state, action, dirs)
-
-            # get data to record as experience
-            predOutput = model.predict(np.array([state])).flatten().tolist()
-            newState = self.getNewState(state, action, dirs)
-            newStatePrediction = model.predict(np.array([newState])).flatten().tolist()
-            predOutput[action] = reward
-            experience = [state, predOutput]
-            self.collectExperience(experience) # record experience
-
-            # train nueral net on the experience collected
-            if(frame == self.batch_size):
-                # get training set from experience
-                Xtrain = [];Ytrain = [];
-                loss = 0
-                for ele in self.experience:
-                    Xtrain.append(ele[0])
-                    Ytrain.append(ele[1])
-
-                loss = model.fit(np.array(Xtrain), np.array(Ytrain),
-                    batch_size=self.batch_size, epochs=self.epoch)
-                # reset frames and expereince
-                frame = 0
-                self.experience = []
-
-            # checks if snake collides with itself
-            i = len(self.xs)-1
-            collided_w_itself = False
-            while i >= 2:
-                if self.collide(self.xs[0], self.xs[i], self.ys[0], self.ys[i], 20, 20, 20, 20):
-                    # die(screen, score)
-                    collided_w_itself = True
-                i-= 1
-            if collided_w_itself:
-                #reset the game
-                self.xs = [290, 290];
-                self.ys = [290, 290];
-                score = 0;
-                self.save_model()
-
-            # checks if snake collides with apple
-            if self.collide(self.xs[0], self.applepos[0], self.ys[0], self.applepos[1], 20, 10, 20, 10):score+=1;self.xs.append(700);self.ys.append(700);self.applepos=(random.randint(0,590),random.randint(0,590));
-            # check if snake collides with wall
-            if (self.xs[0] < 0 or self.xs[0] > 590 or self.ys[0] < 0 or self.ys[0] > 590):
-                # die(screen, score)
-                # reset the game to beginning
-                self.xs = [290, 290];
-                self.ys = [290, 290];
-                score = 0;
-                self.save_model()  # Save the model's weights
+        text = font.render("Score: " + str(self.score), True, WHITE)
+        self.display.blit(text, [0, 0])
+        pygame.display.flip()
 
 
-            i = len(self.xs)-1
-            # propogates x and y cordinates backwards
-            while i >= 1:
-                self.xs[i] = self.xs[i-1];
-                self.ys[i] = self.ys[i-1];
-                i -= 1
-            # updates the co-ordinates of the head which will be propogated backwards
-            if dirs==0:self.ys[0] += 20
-            elif dirs==1:self.xs[0] += 20
-            elif dirs==2:self.ys[0] -= 20
-            elif dirs==3:self.xs[0] -= 20
-            screen.fill((255, 255, 255))
-            # print the snake onto the screen
-            for i in range(0, len(self.xs)):
-                screen.blit(Snake, (self.xs[i], self.ys[i]))
+    def _move(self, action):
+        # [straight, right, left]
 
-            screen.blit(appleimage, self.applepos);
-            t=f.render(str(score), True, (0, 0, 0));
-            screen.blit(t, (10, 10));
-            pygame.display.update()
-            frame+=1
+        clock_wise = [Direction.RIGHT, Direction.DOWN, Direction.LEFT, Direction.UP]
+        idx = clock_wise.index(self.direction)
 
-    def save_model(self, filename="saved_weights.h5"):
-        self.model.save_weights(filename)
-        
-    def load_model(self, filename="saved_weights.h5"):
-        try:
-            self.model.load_weights(filename)
-            print("Model weights loaded successfully!")
-        except:
-            print("No weights found. Starting with a fresh model!")
+        if np.array_equal(action, [1, 0, 0]):
+            new_dir = clock_wise[idx] # no change
+        elif np.array_equal(action, [0, 1, 0]):
+            next_idx = (idx + 1) % 4
+            new_dir = clock_wise[next_idx] # right turn r -> d -> l -> u
+        else: # [0, 0, 1]
+            next_idx = (idx - 1) % 4
+            new_dir = clock_wise[next_idx] # left turn r -> u -> l -> d
 
-if __name__ == '__main__':
-    SnakeGame = SnakeGame(100)
-    SnakeGame.playGame()
+        self.direction = new_dir
+
+        x = self.head.x
+        y = self.head.y
+        if self.direction == Direction.RIGHT:
+            x += BLOCK_SIZE
+        elif self.direction == Direction.LEFT:
+            x -= BLOCK_SIZE
+        elif self.direction == Direction.DOWN:
+            y += BLOCK_SIZE
+        elif self.direction == Direction.UP:
+            y -= BLOCK_SIZE
+
+        self.head = Point(x, y)
