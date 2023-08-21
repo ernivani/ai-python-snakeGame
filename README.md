@@ -1,5 +1,7 @@
 ## **Snake Game AI**
 
+# README NOT UP TO DATE
+
 ### **Description**
 
 This repository contains an implementation of the classic Snake Game with an added twist: an AI player. Using neural networks and reinforcement learning, the AI tries to achieve the highest score possible while avoiding collisions.
